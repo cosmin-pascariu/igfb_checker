@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: igfb-checker
+    env: docker
+    plan: free
+    numInstances: 1
+    healthCheckPath: /
