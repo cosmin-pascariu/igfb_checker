@@ -1,9 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-import time
 from pydantic import BaseModel
+import requests, re, json, time
 
 app = FastAPI(title="IG-FB Privacy Check")
 
@@ -17,38 +15,34 @@ app.add_middleware(
 class URLIn(BaseModel):
     url: str
 
-def get_driver():
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    return webdriver.Chrome(options=opts)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
+}
 
-def check_privacy(url: str) -> bool:
-    """return True dacă e PUBLIC și False dacă e PRIVAT"""
-    driver = get_driver()
+def ig_is_public(shortcode: str) -> bool:
+    """ shortcode = username sau post """
+    api = f"https://www.instagram.com/{shortcode}/?__a=1&__d=dis"
+    r = requests.get(api, headers=HEADERS, timeout=3)
+    if r.status_code != 200:
+        return False
     try:
-        driver.get(url)
-        time.sleep(3)
-        private_msgs = [
-            "This Account is Private",
-            "Sorry, this page isn't available",
-            "Content not available",
-            "log in to continue" 
-        ]
-        return not any(msg in driver.page_source for msg in private_msgs)
-    finally:
-        driver.quit()
+        return not r.json()["user"]["is_private"]
+    except:
+        return False
+
+def fb_is_public(url: str) -> bool:
+    r = requests.get(url, headers=HEADERS, timeout=3)
+    return "This content isn't available right now" not in r.text
 
 @app.post("/check/instagram")
 def ig_check(data: URLIn):
     if "instagram.com" not in data.url:
         raise HTTPException(400, "URL invalid (Instagram)")
-    return {"public": check_privacy(data.url)}
+    username = data.url.strip("/").split("/")[-1]
+    return {"public": ig_is_public(username)}
 
 @app.post("/check/facebook")
 def fb_check(data: URLIn):
     if "facebook.com" not in data.url:
         raise HTTPException(400, "URL invalid (Facebook)")
-    return {"public": check_privacy(data.url)}
+    return {"public": fb_is_public(data.url)}
